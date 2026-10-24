@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAirportSimulation } from '@/context/SimulationContext';
 import { UserRole } from '@/types';
 import { 
@@ -18,8 +18,62 @@ import {
   BarChart3, 
   Tv, 
   SplitSquareVertical,
-  ChevronDown
+  ChevronDown,
+  Check
 } from 'lucide-react';
+
+interface RoleOption {
+  value: UserRole;
+  label: string;
+  secondary: string;
+  badge: string;
+  icon: string;
+}
+
+const ROLE_OPTIONS: RoleOption[] = [
+  {
+    value: 'SPLIT_SCREEN_DEMO',
+    label: 'Split-Screen Demo',
+    secondary: '(Judge Pitch)',
+    badge: '15-MIN PITCH',
+    icon: '🎯',
+  },
+  {
+    value: 'PASSENGER_SCREEN',
+    label: 'Passenger Screen',
+    secondary: '(Full-Screen Player)',
+    badge: 'TOTEM',
+    icon: '📺',
+  },
+  {
+    value: 'PLATFORM_ADMIN',
+    label: 'Platform Admin Dashboard',
+    secondary: '(Operations & NOC)',
+    badge: 'OPS',
+    icon: '🛡️',
+  },
+  {
+    value: 'RETAILER',
+    label: 'Retailer Concessionaire Portal',
+    secondary: '(Campaign Studio & ROAS)',
+    badge: 'CONCESSION',
+    icon: '🛍️',
+  },
+  {
+    value: 'MEDIA_MANAGER',
+    label: 'Media Manager & Studio',
+    secondary: '(Inventory & Yield Mgmt)',
+    badge: 'AD-OPS',
+    icon: '📊',
+  },
+  {
+    value: 'AIRLINE_REP',
+    label: 'Airline Representative Hub',
+    secondary: '(Passenger Care & IRROPS)',
+    badge: 'AIRLINE',
+    icon: '✈️',
+  },
+];
 
 export function SimControlBar() {
   const {
@@ -40,11 +94,56 @@ export function SimControlBar() {
     killScreen,
     flights,
     screens,
+    selectedScreenId,
+    setSelectedScreenId,
+    setScreenStatus,
+    resetFeedback,
   } = useAirportSimulation();
 
   const xy501 = flights.find(f => f.flightNumber === 'XY501');
   const scrG42 = screens.find(s => s.id === 'SCR-G42-01');
   const isG42Offline = scrG42?.status === 'OFFLINE';
+
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const roleDropdownRef = useRef<HTMLDivElement>(null);
+
+  const activeRoleConfig = ROLE_OPTIONS.find(r => r.value === currentRole) ?? ROLE_OPTIONS[0];
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target as Node)) {
+        setIsRoleDropdownOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsRoleDropdownOpen(false);
+      }
+    }
+
+    if (isRoleDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isRoleDropdownOpen]);
+
+  const handleRoleChange = (role: UserRole) => {
+    if (role === 'PASSENGER_SCREEN') {
+      const isValid = screens && screens.length > 0 && screens.some(s => s && s.id === selectedScreenId);
+      if (!isValid) {
+        setSelectedScreenId('SCR-G42-01');
+      }
+    }
+    setCurrentRole(role);
+  };
 
   return (
     <header className="border-b border-slate-800 bg-slate-950/95 backdrop-blur-md sticky top-0 z-50 px-3 lg:px-6 py-2.5 shadow-xl">
@@ -107,12 +206,7 @@ export function SimControlBar() {
           <button
             onClick={() => {
               if (isG42Offline) {
-                // Restore
-                const g42 = screens.find(s => s.id === 'SCR-G42-01');
-                if (g42) {
-                  g42.status = 'ONLINE';
-                  useAirportSimulation;
-                }
+                setScreenStatus('SCR-G42-01', 'ONLINE');
               } else {
                 killScreen('SCR-G42-01');
               }
@@ -131,11 +225,15 @@ export function SimControlBar() {
           {/* Action 4: Reset Demo State */}
           <button
             onClick={resetDemoState}
-            className="flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-1.5 rounded-lg bg-slate-900 text-slate-400 border border-slate-800 hover:border-slate-600 hover:text-slate-200 transition-all"
-            title="Restore baseline 14:00 demo conditions"
+            className={`flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-1.5 rounded-lg border transition-all transform active:scale-95 ${
+              resetFeedback
+                ? 'bg-cyan-950 text-cyan-300 border-cyan-500 shadow-md ring-1 ring-cyan-500/50'
+                : 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-slate-600 hover:text-slate-200'
+            }`}
+            title="Restore baseline 14:00 demo conditions (XY501 On-Time • Rolex Active • 0 Redemptions)"
           >
-            <Zap className="h-3 w-3 text-yellow-400" />
-            <span>⚡ Reset Demo</span>
+            <Zap className={`h-3 w-3 ${resetFeedback ? 'text-cyan-300 animate-pulse' : 'text-yellow-400'}`} />
+            <span>{resetFeedback ? '⚡ Baseline Restored' : '⚡ Reset Demo'}</span>
           </button>
         </div>
 
@@ -171,22 +269,104 @@ export function SimControlBar() {
 
           {/* Role Navigation Switcher */}
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1">
-            <div className="relative">
-              <select
+            <div className="relative" ref={roleDropdownRef}>
+              {/* High-Contrast Interactive Custom Role Trigger Button */}
+              <button
                 id="role-switcher"
+                data-testid="role-switcher"
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={isRoleDropdownOpen}
+                aria-label={`Current role: ${activeRoleConfig.label} ${activeRoleConfig.secondary}. Click to switch role.`}
+                onClick={() => setIsRoleDropdownOpen(prev => !prev)}
+                className="flex items-center gap-2 bg-slate-950 hover:bg-slate-800/90 border border-slate-700 hover:border-cyan-500/80 text-slate-100 font-mono text-xs font-bold rounded-md px-2.5 py-1.5 transition-all shadow-md active:scale-[0.98] focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                title="Select Demo Persona / Role Viewpoint"
+              >
+                <span className="text-sm select-none">{activeRoleConfig.icon}</span>
+                <span className="text-slate-100 font-bold tracking-tight">{activeRoleConfig.label}</span>
+                <span className="text-slate-400 text-[10px] hidden md:inline font-normal">{activeRoleConfig.secondary}</span>
+                <ChevronDown className={`h-3.5 w-3.5 text-cyan-400 transition-transform duration-200 shrink-0 ${isRoleDropdownOpen ? 'rotate-180 text-cyan-300' : ''}`} />
+              </button>
+
+              {/* Accessible Synchronized Native Select */}
+              <select
+                id="role-switcher-native"
                 name="role-switcher"
                 value={currentRole}
-                onChange={e => setCurrentRole(e.target.value as UserRole)}
-                className="bg-slate-950 border border-cyan-800/80 text-cyan-300 font-mono text-xs font-bold rounded-md pl-2 pr-7 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer appearance-none shadow"
+                onChange={e => handleRoleChange(e.target.value as UserRole)}
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
               >
-                <option value="SPLIT_SCREEN_DEMO">🎯 Split-Screen Demo (Judge Pitch)</option>
-                <option value="PASSENGER_SCREEN">📺 Passenger Screen (Full-Screen Player)</option>
-                <option value="PLATFORM_ADMIN">🛡️ Platform Admin Dashboard</option>
-                <option value="RETAILER">🛍️ Retailer Concessionaire Portal</option>
-                <option value="MEDIA_MANAGER">📊 Media Manager & Campaign Studio</option>
-                <option value="AIRLINE_REP">✈️ Airline Representative Hub</option>
+                {ROLE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value} className="bg-slate-900 text-slate-100">
+                    {opt.icon} {opt.label} {opt.secondary}
+                  </option>
+                ))}
               </select>
-              <ChevronDown className="h-3 w-3 text-cyan-400 absolute right-2 top-2 pointer-events-none" />
+
+              {/* High-Contrast Popover Container & Menu Items */}
+              {isRoleDropdownOpen && (
+                <div
+                  role="listbox"
+                  aria-label="Demo Persona Roles"
+                  className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-800 shadow-xl rounded-lg z-50 p-1.5 focus:outline-none backdrop-blur-md ring-1 ring-slate-800/80 animate-in fade-in slide-in-from-top-1 duration-150"
+                >
+                  <div className="px-3 py-1.5 mb-1 border-b border-slate-800 flex items-center justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                    <span>SWITCH DEMO ROLE</span>
+                    <span className="text-emerald-400 font-semibold tracking-normal text-[9px] bg-emerald-950/80 border border-emerald-800/60 px-1.5 py-0.5 rounded">
+                      HIGH CONTRAST
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {ROLE_OPTIONS.map(role => {
+                      const isActive = currentRole === role.value;
+                      return (
+                        <button
+                          key={role.value}
+                          type="button"
+                          role="option"
+                          aria-selected={isActive}
+                          onClick={() => {
+                            handleRoleChange(role.value);
+                            setIsRoleDropdownOpen(false);
+                          }}
+                          className={`w-full text-left py-2.5 px-3 rounded-md flex items-center justify-between gap-3 transition-colors ${
+                            isActive
+                              ? 'bg-emerald-500/10 text-emerald-400 border-l-2 border-emerald-500'
+                              : 'text-slate-100 hover:text-white hover:bg-slate-800 border-l-2 border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="text-base shrink-0 select-none">{role.icon}</span>
+                            <div className="min-w-0">
+                              <div className={`text-xs font-bold truncate ${isActive ? 'text-emerald-300' : 'text-slate-100'}`}>
+                                {role.label}
+                              </div>
+                              <div className="text-[11px] text-slate-400 truncate font-mono">
+                                {role.secondary}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wide ${
+                                isActive
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                  : 'bg-slate-800 text-slate-300 border border-slate-700/60'
+                              }`}
+                            >
+                              {role.badge}
+                            </span>
+                            {isActive && <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Contextual Sub-Selector for Retailer */}
@@ -194,12 +374,12 @@ export function SimControlBar() {
               <select
                 value={selectedRetailerOutlet}
                 onChange={e => setSelectedRetailerOutlet(e.target.value)}
-                className="bg-slate-950 border border-purple-800/80 text-purple-300 font-mono text-[11px] font-bold rounded-md px-2 py-1 focus:outline-none cursor-pointer"
+                className="bg-slate-900 border border-purple-700/80 text-purple-200 font-mono text-xs font-bold rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer shadow-sm"
               >
-                <option value="Metropolis Duty Free">Metropolis Duty Free</option>
-                <option value="Costa Coffee">Costa Coffee</option>
-                <option value="Shake Shack">Shake Shack</option>
-                <option value="TUMI">TUMI Travel Luxury</option>
+                <option value="Metropolis Duty Free" className="bg-slate-900 text-slate-100 py-1.5">Metropolis Duty Free</option>
+                <option value="Costa Coffee" className="bg-slate-900 text-slate-100 py-1.5">Costa Coffee</option>
+                <option value="Shake Shack" className="bg-slate-900 text-slate-100 py-1.5">Shake Shack</option>
+                <option value="TUMI" className="bg-slate-900 text-slate-100 py-1.5">TUMI Travel Luxury</option>
               </select>
             )}
 
@@ -208,15 +388,32 @@ export function SimControlBar() {
               <select
                 value={selectedAirline}
                 onChange={e => setSelectedAirline(e.target.value)}
-                className="bg-slate-950 border border-indigo-800/80 text-indigo-300 font-mono text-[11px] font-bold rounded-md px-2 py-1 focus:outline-none cursor-pointer"
+                className="bg-slate-900 border border-indigo-700/80 text-indigo-200 font-mono text-xs font-bold rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm"
               >
-                <option value="Emirates/FlyMetropolis">Emirates / FlyMetropolis</option>
-                <option value="SkyLeisure">SunVacation / SkyLeisure</option>
+                <option value="Emirates/FlyMetropolis" className="bg-slate-900 text-slate-100 py-1.5">Emirates / FlyMetropolis</option>
+                <option value="SkyLeisure" className="bg-slate-900 text-slate-100 py-1.5">SunVacation / SkyLeisure</option>
               </select>
             )}
           </div>
         </div>
       </div>
+
+      {/* Floating Demo Reset Confirmation Toast */}
+      {resetFeedback && (
+        <div className="fixed top-16 right-4 sm:right-6 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/95 border border-cyan-500/80 text-cyan-200 text-xs font-mono shadow-2xl shadow-cyan-950/80 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="h-6 w-6 rounded-lg bg-cyan-950 border border-cyan-700/60 flex items-center justify-center text-cyan-400 shrink-0">
+            <Zap className="h-3.5 w-3.5 text-cyan-300 animate-pulse" />
+          </div>
+          <div>
+            <div className="font-bold text-white flex items-center gap-1.5">
+              <span>{resetFeedback}</span>
+            </div>
+            <div className="text-[10px] text-slate-400">
+              Clock: 14:00 UTC • Flight XY501: ON_TIME • Screen SCR-G42: ONLINE • Redemptions: $0.00
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

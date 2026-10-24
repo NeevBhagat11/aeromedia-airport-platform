@@ -3,10 +3,11 @@
 import React from 'react';
 import { useAirportSimulation } from '@/context/SimulationContext';
 import { PassengerScreen } from '@/components/screens/PassengerScreen';
+import { ComponentErrorBoundary } from '@/components/common/ComponentErrorBoundary';
 import { Tv } from 'lucide-react';
 
 export function PassengerScreenView() {
-  const { screens, selectedScreenId, setSelectedScreenId } = useAirportSimulation();
+  const { screens = [], selectedScreenId, setSelectedScreenId } = useAirportSimulation();
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
@@ -29,17 +30,19 @@ export function PassengerScreenView() {
         <select
           value={selectedScreenId}
           onChange={e => setSelectedScreenId(e.target.value)}
-          className="bg-slate-950 border border-slate-700 text-white font-mono text-xs font-semibold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+          className="bg-slate-900 border border-slate-700 text-slate-100 font-mono text-xs font-semibold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer shadow-sm"
         >
-          {screens.map(s => (
-            <option key={s.id} value={s.id}>
+          {(screens || []).map(s => (
+            <option key={s.id} value={s.id} className="bg-slate-900 text-slate-100 py-1.5">
               {s.code} • {s.name} ({s.orientation})
             </option>
           ))}
         </select>
       </div>
 
-      <PassengerScreen allowOrientationToggle={true} />
+      <ComponentErrorBoundary viewName="Passenger Screen Player">
+        <PassengerScreen allowOrientationToggle={true} />
+      </ComponentErrorBoundary>
     </div>
   );
 }

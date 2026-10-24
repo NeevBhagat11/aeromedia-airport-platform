@@ -31,6 +31,10 @@ export class MockAidxAdapter {
     return this.messageHistory.slice(-limit);
   }
 
+  public reset(): void {
+    this.messageHistory = [];
+  }
+
   /**
    * Generates authentic IATA AIDX XML format string
    * standard: IATA Aviation Information Data Exchange (AIDX) FlightLegNotifRQ

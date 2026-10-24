@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Component } from 'react';
 import { useAirportSimulation } from '@/context/SimulationContext';
 import { CreativeApprovalItem } from '@/types';
 import { 
@@ -22,19 +22,74 @@ import {
   X,
   Sliders,
   Zap,
-  ArrowUpRight
+  ArrowUpRight,
+  RefreshCw
 } from 'lucide-react';
+
+// ─── Error Boundary ─────────────────────────────────────────────────────────
+interface EBState { hasError: boolean; error?: Error }
+class MediaManagerErrorBoundary extends Component<{ children: React.ReactNode }, EBState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): EBState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[MediaManagerView] Boundary caught error:', error, info);
+  }
+
+  handleReset = () => this.setState({ hasError: false, error: undefined });
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-[300px] flex flex-col items-center justify-center gap-4 bg-slate-900 border border-rose-900/60 rounded-2xl p-8 font-mono">
+          <div className="h-12 w-12 rounded-2xl bg-rose-950 border border-rose-800 flex items-center justify-center">
+            <AlertTriangle className="h-6 w-6 text-rose-400" />
+          </div>
+          <div className="text-center space-y-1">
+            <p className="text-sm font-bold text-rose-300">Media Manager view encountered an error</p>
+            <p className="text-xs text-slate-400">{this.state.error?.message ?? 'Unknown render error'}</p>
+          </div>
+          <button
+            onClick={this.handleReset}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold border border-slate-700 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Reset View
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Default slot used when a computed slot is null/undefined
+const DEFAULT_SLOT = {
+  time: '--:--',
+  status: 'AVAILABLE' as const,
+  cpm: 18,
+  pax: 0,
+  campaign: 'Unsold Spot',
+};
+
 
 export function MediaManagerView() {
   const { 
-    campaigns, 
-    screens, 
+    campaigns = [], 
+    screens = [], 
     decisionLogs, 
-    creativeApprovals, 
+    creativeApprovals = [], 
     approveCreative,
     rejectCreative,
     currency,
-    flights,
+    flights = [],
     simTimeFormatted,
     injectDelay
   } = useAirportSimulation();
@@ -44,7 +99,7 @@ export function MediaManagerView() {
   const [rejectFeedbackId, setRejectFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState<string>('Creative image requires higher contrast for direct airport sunlight.');
 
-  const xy501 = flights.find(f => f.flightNumber === 'XY501');
+  const xy501 = flights?.find(f => f.flightNumber === 'XY501');
   const isDelayed = Boolean(xy501?.delayMinutes && xy501.delayMinutes > 0);
 
   // Currency multiplier
@@ -53,23 +108,24 @@ export function MediaManagerView() {
 
   const baseCpm = 18.0;
   const surgeCpm = Number((baseCpm * surgeMultiplier).toFixed(2));
-  const totalBudget = campaigns.reduce((acc, c) => acc + (c.budget * currencyRate), 0);
-  const totalImpressions = campaigns.reduce((acc, c) => acc + c.impressionsDelivered, 48200);
+  const totalBudget = (campaigns || []).reduce((acc, c) => acc + ((c?.budget ?? 0) * currencyRate), 0);
+  const totalImpressions = (campaigns || []).reduce((acc, c) => acc + (c?.impressionsDelivered ?? 0), 48200);
 
   // Time hours for occupancy calendar
   const timeSlots = ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
   // Occupancy matrix data
   const occupancyMatrix = useMemo(() => {
-    return screens.map(scr => {
-      const isGate42 = scr.gateId === 'Gate 42' || scr.id.includes('G42');
-      const isDutyFree = scr.id.includes('DUTYFREE');
+    return (screens || []).map(scr => {
+      if (!scr) return null;
+      const isGate42 = scr.gateId === 'Gate 42' || scr.id?.includes('G42');
+      const isDutyFree = scr.id?.includes('DUTYFREE') ?? false;
 
       return {
-        screenId: scr.id,
-        screenName: scr.name,
-        gate: scr.gateId || 'Central',
-        orientation: scr.orientation,
+        screenId: scr.id ?? 'UNKNOWN',
+        screenName: scr.name ?? 'Unknown Screen',
+        gate: scr.gateId ?? 'Central',
+        orientation: scr.orientation ?? '16:9',
         slots: timeSlots.map((time, idx) => {
           // Surge during 14:00 - 16:00 if delayed or at duty free
           const isSurgeTime = (time === '14:00' || time === '15:00') && (isGate42 && isDelayed);
@@ -91,7 +147,7 @@ export function MediaManagerView() {
           };
         }),
       };
-    });
+    }).filter((row) => row !== null);
   }, [screens, isDelayed, surgeCpm]);
 
   // Pricing curve points
@@ -134,7 +190,7 @@ export function MediaManagerView() {
             <span>{isDelayed ? 'Reset Gate Delay' : 'Simulate Surge (+45m Delay)'}</span>
           </button>
           <span className="text-xs font-mono text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-            Active Screens: <strong className="text-emerald-400">{screens.filter(s => s.status === 'ONLINE').length} / {screens.length}</strong>
+            Active Screens: <strong className="text-emerald-400">{(screens || []).filter(s => s?.status === 'ONLINE').length} / {(screens || []).length}</strong>
           </span>
         </div>
       </div>
@@ -172,7 +228,7 @@ export function MediaManagerView() {
           <div className="text-[11px] text-slate-400 uppercase tracking-wide">Brand Safety Approvals</div>
           <div className="text-2xl font-bold text-purple-300 mt-1 flex items-center gap-1.5">
             <ShieldCheck className="h-5 w-5 text-purple-400" />
-            <span>{creativeApprovals.filter(a => a.status === 'PENDING').length} Pending</span>
+            <span>{(creativeApprovals || []).filter(a => a?.status === 'PENDING').length} Pending</span>
           </div>
           <div className="text-[11px] text-slate-500 mt-1">Automated category separation active</div>
         </div>
@@ -235,28 +291,29 @@ export function MediaManagerView() {
                       {row.orientation}
                     </span>
                   </td>
-                  {row.slots.map((slot, sIdx) => {
-                    const isSelected = selectedSlot?.screen === row.screenId && selectedSlot?.hour === slot.time;
+                  {(row.slots || []).map((slot, sIdx) => {
+                    const safeSlot = slot ?? DEFAULT_SLOT;
+                    const isSelected = selectedSlot?.screen === row.screenId && selectedSlot?.hour === safeSlot.time;
                     return (
                       <td key={sIdx} className="py-2 px-1.5 text-center">
                         <button
                           onClick={() => setSelectedSlot({
                             screen: row.screenId,
-                            hour: slot.time,
-                            status: slot.status,
-                            cpm: slot.cpm,
-                            pax: slot.pax,
+                            hour: safeSlot.time,
+                            status: safeSlot.status,
+                            cpm: safeSlot.cpm,
+                            pax: safeSlot.pax,
                           })}
                           className={`w-full py-2 px-1 rounded-lg text-[10px] font-mono font-bold transition-all border ${
-                            slot.status === 'SURGE'
+                            safeSlot.status === 'SURGE'
                               ? 'bg-amber-950/80 text-amber-200 border-amber-500 shadow-md shadow-amber-950/40 ring-1 ring-amber-400 animate-pulse'
-                              : slot.status === 'BOOKED'
+                              : safeSlot.status === 'BOOKED'
                                 ? 'bg-cyan-950/70 text-cyan-200 border-cyan-800 hover:border-cyan-600'
                                 : 'bg-slate-950 text-slate-500 border-slate-800 hover:border-slate-600 hover:text-slate-300'
                           } ${isSelected ? 'ring-2 ring-white scale-105' : ''}`}
                         >
-                          <div>{slot.status === 'SURGE' ? 'SURGE' : slot.status === 'BOOKED' ? 'BOOKED' : 'OPEN'}</div>
-                          <div className="text-[9px] opacity-80">{currencySymbol}{slot.cpm.toFixed(0)}</div>
+                          <div>{safeSlot.status === 'SURGE' ? 'SURGE' : safeSlot.status === 'BOOKED' ? 'BOOKED' : 'OPEN'}</div>
+                          <div className="text-[9px] opacity-80">{currencySymbol}{safeSlot.cpm.toFixed(0)}</div>
                         </button>
                       </td>
                     );
@@ -421,13 +478,15 @@ export function MediaManagerView() {
           </div>
 
           <div className="text-xs font-mono text-slate-400">
-            Pending Queue: <strong className="text-amber-400">{creativeApprovals.filter(a => a.status === 'PENDING').length}</strong>
+            Pending Queue: <strong className="text-amber-400">{(creativeApprovals || []).filter(a => a?.status === 'PENDING').length}</strong>
           </div>
         </div>
 
         {/* Approval Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {creativeApprovals.map(item => (
+          {(creativeApprovals || []).map(item => {
+            if (!item) return null;
+            return (
             <div 
               key={item.id}
               className={`bg-slate-950 rounded-2xl border p-4 flex flex-col justify-between gap-4 transition-all ${
@@ -507,7 +566,8 @@ export function MediaManagerView() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -551,5 +611,18 @@ export function MediaManagerView() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Default export: MediaManagerView wrapped in an Error Boundary.
+ * The boundary renders a "Reset View" button on uncaught render errors,
+ * preventing the crash from propagating up to the app shell.
+ */
+export function MediaManagerViewBoundary() {
+  return (
+    <MediaManagerErrorBoundary>
+      <MediaManagerView />
+    </MediaManagerErrorBoundary>
   );
 }

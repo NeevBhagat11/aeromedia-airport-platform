@@ -46,10 +46,10 @@ export function VirtualScreenDisplay() {
               <select
                 value={selectedScreenId}
                 onChange={e => setSelectedScreenId(e.target.value)}
-                className="bg-slate-950 border border-slate-700 text-white font-mono text-sm font-semibold rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-cyan-500 focus:outline-none cursor-pointer"
+                className="bg-slate-900 border border-slate-700 text-slate-100 font-mono text-xs font-semibold rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-cyan-500 focus:outline-none cursor-pointer shadow-sm"
               >
                 {screens.map(s => (
-                  <option key={s.id} value={s.id}>
+                  <option key={s.id} value={s.id} className="bg-slate-900 text-slate-100 py-1.5">
                     {s.code} • {s.name} ({s.orientation})
                   </option>
                 ))}

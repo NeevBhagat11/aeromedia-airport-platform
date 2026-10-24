@@ -49,7 +49,7 @@ const DESTINATIONS: Record<string, { city: string; beach: boolean; luxury: boole
 export function generateSeedFlights(): Flight[] {
   const flights: Flight[] = [];
 
-  // 1. Mandatory Flight XY501 to DXB (240 pax, Gate 42, delayed 45 min)
+  // 1. Mandatory Flight XY501 to DXB (240 pax, Gate 42, on-time baseline)
   flights.push({
     id: 'FL-XY501',
     flightNumber: 'XY501',
@@ -60,13 +60,13 @@ export function generateSeedFlights(): Flight[] {
     destination: 'DXB',
     destinationCity: 'Dubai',
     scheduledTime: `${BASE_DATE}T14:35:00Z`,
-    estimatedTime: `${BASE_DATE}T15:20:00Z`,
+    estimatedTime: `${BASE_DATE}T14:35:00Z`,
     gate: 'Gate 42',
     terminal: 'Terminal 1',
     concourse: 'Concourse B',
     paxCount: 240,
-    status: 'DELAYED',
-    delayMinutes: 45,
+    status: 'ON_TIME',
+    delayMinutes: 0,
     crowdDemographics: {
       businessPct: 48,
       holidayPct: 32,

@@ -18,6 +18,7 @@ export class MockAodbAdapter implements FlightSource {
     for (const flight of seeds) {
       this.flights.set(flight.flightNumber, flight);
     }
+    this.eventQueue = [];
   }
 
   public async getFlights(): Promise<Flight[]> {

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAirportSimulation } from '@/context/SimulationContext';
-import { ScreenOrientation } from '@/types';
+import { Screen, ScreenOrientation } from '@/types';
 import { SvgQrCode } from '@/components/common/SvgQrCode';
 import { 
   Tv, 
@@ -26,6 +26,42 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+// ─── Fallback data shapes used when context data is not yet hydrated ─────────
+const DEFAULT_SCREEN: Screen = {
+  id: 'SCR-G42-01',
+  code: 'SCR-G42-01',
+  name: 'Gate 42 Holdroom Totem A',
+  zoneId: 'ZONE-G42',
+  gateId: 'Gate 42',
+  terminal: 'Terminal 1',
+  concourse: 'Concourse B',
+  orientation: '16:9',
+  status: 'ONLINE',
+  currentAdId: null,
+};
+
+const FALLBACK_CAMPAIGN = {
+  id: 'FALLBACK',
+  advertiserName: 'Metropolis Airport',
+  title: 'Welcome to Metropolis Airport',
+  category: 'Airport Services',
+  targetSegments: [],
+  hardFilters: {},
+  boostRules: [],
+  creativeUrl: '',
+  headline: 'Welcome to Metropolis Hub',
+  subheadline: 'Your gateway to the world. Discover duty-free, dining, and more.',
+  callToAction: 'Explore Terminal',
+  badgeText: 'LIVE DEMO',
+  promoCode: 'METROFLY',
+  accentColor: '#06b6d4',
+  budget: 0,
+  cpm: 0,
+  impressionsDelivered: 0,
+  status: 'ACTIVE' as const,
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface PassengerScreenProps {
   customScreenId?: string;
   allowOrientationToggle?: boolean;
@@ -38,43 +74,53 @@ export function PassengerScreen({
   className = '',
 }: PassengerScreenProps) {
   const {
-    screens,
+    screens = [],
     selectedScreenId,
     setSelectedScreenId,
-    campaigns,
-    flights,
+    campaigns = [],
+    flights = [],
     decisionLogs,
     simTime,
     selectedAudience,
   } = useAirportSimulation();
 
+  // ── Resolve active screen with multi-tier fallback ──────────────────────────
   const activeScreenId = customScreenId || selectedScreenId;
-  const screen = screens.find(s => s.id === activeScreenId) || screens[0];
+  const screen: Screen =
+    screens.find(s => s?.id === activeScreenId) ??
+    screens.find(s => s?.id === 'SCR-G42-01') ??
+    screens[0] ??
+    DEFAULT_SCREEN;
 
   // Local orientation toggle state for demo flexibility
   const [forcedOrientation, setForcedOrientation] = useState<ScreenOrientation | null>(null);
-  const currentOrientation: ScreenOrientation = forcedOrientation || screen.orientation;
+  const currentOrientation: ScreenOrientation = forcedOrientation ?? screen.orientation ?? '16:9';
   const isPortrait = currentOrientation === '9:16';
 
   // "Why this ad?" modal state
   const [showWhyModal, setShowWhyModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const winningCampaign = campaigns.find(c => c.id === screen.currentAdId) || campaigns[0];
-  const decisionLog = decisionLogs[screen.id];
+  // ── Resolve winning campaign with null-safe fallback ─────────────────────────
+  const winningCampaign =
+    (screen.currentAdId ? campaigns.find(c => c?.id === screen.currentAdId) : null) ??
+    campaigns[0] ??
+    FALLBACK_CAMPAIGN;
+
+  const decisionLog = decisionLogs?.[screen.id];
   const isOffline = screen.status === 'OFFLINE';
 
-  // Live FIDS strip: flights departing near Gate 42
+  // ── FIDS strip: null-safe flight array ──────────────────────────────────────
   const gateFlights = useMemo(() => {
-    return flights
-      .filter(f => f.gate === screen.gateId || f.flightNumber === 'XY501' || f.flightNumber === 'ZQ88')
+    return (flights || [])
+      .filter(f => f?.gate === screen.gateId || f?.flightNumber === 'XY501' || f?.flightNumber === 'ZQ88')
       .slice(0, 3);
   }, [flights, screen.gateId]);
 
   // Main flight for countdown bar (e.g. XY501)
-  const primaryFlight = gateFlights.find(f => f.flightNumber === 'XY501') || gateFlights[0];
-  const promoCode = winningCampaign?.promoCode || 'METROFLY';
-  const claimUrl = `/claim?code=${encodeURIComponent(promoCode)}&screen=${encodeURIComponent(screen.code)}`;
+  const primaryFlight = gateFlights.find(f => f?.flightNumber === 'XY501') ?? gateFlights[0] ?? null;
+  const promoCode = winningCampaign?.promoCode ?? 'METROFLY';
+  const claimUrl = `/claim?code=${encodeURIComponent(promoCode)}&screen=${encodeURIComponent(screen.code ?? screen.id)}`;
 
   const handleShare = () => {
     if (typeof window !== 'undefined') {
@@ -85,15 +131,26 @@ export function PassengerScreen({
     }
   };
 
+  // ── Safe audience metrics for the modal ────────────────────────────────────
+  const audienceHolidayPct  = selectedAudience?.demographics?.holidayPct  ?? 45;
+  const audienceBusinessPct = selectedAudience?.demographics?.businessPct ?? 35;
+  const audienceFamilyPct   = selectedAudience?.demographics?.familyPct   ?? 20;
+  const audienceDwell       = selectedAudience?.dwellMinutesAvg            ?? 48;
+  const audiencePax         = selectedAudience?.totalPax                   ?? 420;
+  const audienceMaxDelay    = selectedAudience?.maxDelayMinutes             ?? 0;
+
+  // Safe accent color
+  const accentColor = winningCampaign?.accentColor ?? '#06b6d4';
+
   return (
     <div className={`relative flex flex-col gap-3 ${className}`}>
       {/* Top Simulator Control Bar */}
       {allowOrientationToggle && (
         <div className="flex items-center justify-between gap-2 px-1 text-xs font-mono">
           <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-semibold">{screen.code}</span>
+            <span className="text-slate-400 font-semibold">{screen.code ?? screen.id}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-cyan-400 font-bold">{screen.name}</span>
+            <span className="text-cyan-400 font-bold">{screen.name ?? 'Unknown Screen'}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -121,7 +178,7 @@ export function PassengerScreen({
             </div>
             <h3 className="text-lg font-bold text-slate-200">SCREEN OFFLINE - DIAGNOSTIC MODE</h3>
             <p className="text-xs text-slate-400 mt-1 max-w-sm">
-              Hardware node <span className="text-rose-400 font-bold">{screen.code}</span> has lost carrier signal.
+              Hardware node <span className="text-rose-400 font-bold">{screen.code ?? screen.id}</span> has lost carrier signal.
               Failover watchdog initiated.
             </p>
             <div className="mt-4 px-3 py-1.5 bg-rose-950/40 border border-rose-800/60 rounded text-rose-300 text-xs font-mono">
@@ -136,13 +193,13 @@ export function PassengerScreen({
                 : 'w-full max-w-4xl aspect-[16/9]'
             }`}
             style={{
-              boxShadow: `0 0 45px -8px ${winningCampaign.accentColor || '#06b6d4'}45`,
+              boxShadow: `0 0 45px -8px ${accentColor}45`,
             }}
           >
             {/* Background Creative Image with Deep Cinematic Gradients */}
             <div
               className="absolute inset-0 bg-cover bg-center filter brightness-95 transition-transform duration-1000 scale-100 hover:scale-105"
-              style={{ backgroundImage: `url(${winningCampaign.creativeUrl})` }}
+              style={{ backgroundImage: winningCampaign.creativeUrl ? `url(${winningCampaign.creativeUrl})` : undefined }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/65 to-slate-950/30" />
             <div className="absolute inset-0 bg-gradient-to-r from-slate-950/50 via-transparent to-slate-950/50" />
@@ -156,7 +213,7 @@ export function PassengerScreen({
                 {winningCampaign.badgeText && (
                   <span
                     className="text-[9px] sm:text-[10px] font-mono font-bold tracking-wider uppercase px-2 py-1 rounded-md shadow backdrop-blur-md text-slate-950"
-                    style={{ backgroundColor: winningCampaign.accentColor || '#38bdf8' }}
+                    style={{ backgroundColor: accentColor }}
                   >
                     {winningCampaign.badgeText}
                   </span>
@@ -167,8 +224,10 @@ export function PassengerScreen({
               {primaryFlight && (
                 <div className="flex items-center gap-1.5 bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/15 text-[10px] font-mono text-cyan-300 shadow">
                   <Plane className="h-3 w-3 text-cyan-400" />
-                  <span className="font-bold">{primaryFlight.flightNumber} to {primaryFlight.destination}</span>
-                  {primaryFlight.delayMinutes > 0 ? (
+                  <span className="font-bold">
+                    {primaryFlight.flightNumber ?? '—'} to {primaryFlight.destination ?? '—'}
+                  </span>
+                  {(primaryFlight.delayMinutes ?? 0) > 0 ? (
                     <span className="text-amber-300 font-bold bg-amber-950/80 px-1 py-0.2 rounded border border-amber-700/60">
                       +{primaryFlight.delayMinutes}m DELAY
                     </span>
@@ -184,7 +243,7 @@ export function PassengerScreen({
             {/* SCREEN MIDDLE/BOTTOM: Ad Creative Copy, Live Scannable QR & Countdown */}
             <div className="relative z-10 p-4 sm:p-6 flex flex-col justify-end gap-3 mt-auto">
               {/* Dynamic Flight Callout Banner */}
-              {primaryFlight && primaryFlight.delayMinutes > 0 && winningCampaign.category === 'Grab & Go F&B' && (
+              {primaryFlight && (primaryFlight.delayMinutes ?? 0) > 0 && winningCampaign.category === 'Grab & Go F&B' && (
                 <div className="self-start inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/90 text-slate-950 text-xs font-mono font-extrabold shadow-lg animate-pulse">
                   <Sparkles className="h-3.5 w-3.5" />
                   <span>FLIGHT XY501 DELAY VOUCHER ACTIVE</span>
@@ -209,7 +268,7 @@ export function PassengerScreen({
                       href={claimUrl}
                       target="_blank"
                       className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-extrabold text-slate-950 shadow-xl flex items-center gap-1.5 transition-transform transform active:scale-95"
-                      style={{ backgroundColor: winningCampaign.accentColor || '#38bdf8' }}
+                      style={{ backgroundColor: accentColor }}
                     >
                       <span>{winningCampaign.callToAction}</span>
                       <ExternalLink className="h-3.5 w-3.5" />
@@ -242,7 +301,7 @@ export function PassengerScreen({
                 {/* Right: Dynamic Scannable Promo QR */}
                 <div className="flex items-center gap-2.5 bg-black/85 backdrop-blur-md p-2 rounded-xl border border-white/20 shadow-2xl">
                   <Link href={claimUrl} target="_blank" title="Scan or click to claim promo voucher on mobile">
-                    <SvgQrCode value={claimUrl} size={64} accentColor={winningCampaign.accentColor} />
+                    <SvgQrCode value={claimUrl} size={64} accentColor={accentColor} />
                   </Link>
                   <div className="text-left font-mono">
                     <div className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">SCAN PHONE</div>
@@ -266,15 +325,19 @@ export function PassengerScreen({
                   <span>GATE 42 FIDS:</span>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
-                  {gateFlights.map(f => (
-                    <div key={f.id} className="flex items-center gap-1.5">
-                      <span className="font-bold text-white">{f.flightNumber}</span>
-                      <span className="text-slate-400">{f.destination}</span>
-                      <span className={f.delayMinutes > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
-                        {f.delayMinutes > 0 ? `+${f.delayMinutes}m` : 'ON-TIME'}
-                      </span>
-                    </div>
-                  ))}
+                  {(gateFlights || []).map(f => {
+                    if (!f) return null;
+                    const delay = f.delayMinutes ?? 0;
+                    return (
+                      <div key={f.id ?? f.flightNumber} className="flex items-center gap-1.5">
+                        <span className="font-bold text-white">{f.flightNumber ?? '—'}</span>
+                        <span className="text-slate-400">{f.destination ?? '—'}</span>
+                        <span className={delay > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
+                          {delay > 0 ? `+${delay}m` : 'ON-TIME'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -309,7 +372,7 @@ export function PassengerScreen({
               <div>
                 <h3 className="text-base font-bold text-white">Why Was This Ad Displayed?</h3>
                 <p className="text-xs text-slate-400 font-mono">
-                  Autonomous Decision Engine Audit • Screen {screen.code}
+                  Autonomous Decision Engine Audit • Screen {screen.code ?? screen.id}
                 </p>
               </div>
             </div>
@@ -323,42 +386,42 @@ export function PassengerScreen({
                 <div>
                   <div className="flex justify-between text-slate-300 mb-1">
                     <span>Holiday / Leisure</span>
-                    <span className="font-bold text-emerald-400">{selectedAudience?.demographics.holidayPct || 45}%</span>
+                    <span className="font-bold text-emerald-400">{audienceHolidayPct}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${selectedAudience?.demographics.holidayPct || 45}%` }} />
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${audienceHolidayPct}%` }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-slate-300 mb-1">
                     <span>Business Executive</span>
-                    <span className="font-bold text-indigo-400">{selectedAudience?.demographics.businessPct || 35}%</span>
+                    <span className="font-bold text-indigo-400">{audienceBusinessPct}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${selectedAudience?.demographics.businessPct || 35}%` }} />
+                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${audienceBusinessPct}%` }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-slate-300 mb-1">
                     <span>Family Travelers</span>
-                    <span className="font-bold text-amber-400">{selectedAudience?.demographics.familyPct || 20}%</span>
+                    <span className="font-bold text-amber-400">{audienceFamilyPct}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${selectedAudience?.demographics.familyPct || 20}%` }} />
+                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${audienceFamilyPct}%` }} />
                   </div>
                 </div>
 
                 <div className="pt-1 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80">
-                  <span>Median Dwell: <strong className="text-white">{selectedAudience?.dwellMinutesAvg || 48} mins</strong></span>
-                  <span>Total Pax: <strong className="text-cyan-400">{selectedAudience?.totalPax || 420} pax</strong></span>
+                  <span>Median Dwell: <strong className="text-white">{audienceDwell} mins</strong></span>
+                  <span>Total Pax: <strong className="text-cyan-400">{audiencePax} pax</strong></span>
                 </div>
               </div>
             </div>
 
             {/* Top Ranked Candidates */}
-            {decisionLog && (
+            {decisionLog && Array.isArray(decisionLog.candidateScores) && decisionLog.candidateScores.length > 0 && (
               <div className="mb-4">
                 <div className="text-[11px] font-mono text-slate-400 uppercase font-bold mb-2">
                   Top Ranked Candidate Campaigns
@@ -366,7 +429,7 @@ export function PassengerScreen({
                 <div className="space-y-2 font-mono text-xs">
                   {decisionLog.candidateScores.slice(0, 3).map((c, i) => (
                     <div
-                      key={c.campaignId}
+                      key={c.campaignId ?? i}
                       className={`p-2.5 rounded-xl border flex items-center justify-between ${
                         i === 0
                           ? 'bg-cyan-950/40 border-cyan-500/60 text-white'
@@ -385,8 +448,8 @@ export function PassengerScreen({
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-bold text-cyan-300">{c.finalScore.toFixed(1)} pts</div>
-                        <div className="text-[10px] text-slate-500">base: {c.baseScore.toFixed(1)}</div>
+                        <div className="font-bold text-cyan-300">{(c.finalScore ?? 0).toFixed(1)} pts</div>
+                        <div className="text-[10px] text-slate-500">base: {(c.baseScore ?? 0).toFixed(1)}</div>
                       </div>
                     </div>
                   ))}
@@ -401,8 +464,8 @@ export function PassengerScreen({
                 <span>Deterministic Winning Reason</span>
               </div>
               <p className="text-slate-300 leading-relaxed">
-                {selectedAudience?.maxDelayMinutes && selectedAudience.maxDelayMinutes > 0
-                  ? `Flight XY501 is delayed by +${selectedAudience.maxDelayMinutes}m at Gate 42. Concession delay surge boost triggered +85% priority for comfort dining and grab & go concessions within walking proximity.`
+                {audienceMaxDelay > 0
+                  ? `Flight XY501 is delayed by +${audienceMaxDelay}m at Gate 42. Concession delay surge boost triggered +85% priority for comfort dining and grab & go concessions within walking proximity.`
                   : `Audience profile matched high-dwell holiday travelers departing Gate 42. Campaign qualified with the highest CPM demographic affinity index.`}
               </p>
             </div>

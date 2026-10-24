@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Flight, 
   Screen, 
@@ -51,6 +51,8 @@ export interface SimulationContextValue {
   resetSimulation: () => void;
   resetDemoState: () => void;
   setSimTimeDirect: (hours: number, minutes: number) => void;
+  resetFeedback: string | null;
+  setResetFeedback: (msg: string | null) => void;
 
   // Role & Persona Switcher
   currentRole: UserRole;
@@ -112,15 +114,112 @@ export interface SimulationContextValue {
 const SimulationContext = createContext<SimulationContextValue | null>(null);
 
 // Initial start time: 14:00 on 2026-10-23
+const BASE_DATE = '2026-10-23';
 const INITIAL_DATE = new Date('2026-10-23T14:00:00Z');
+const SESSION_KEY_SIM_OFFSET = 'aeromedia_sim_offset_ms';
+const SESSION_KEY_REDEMPTIONS = 'aeromedia_redemptions';
+const SESSION_KEY_ROLE = 'aeromedia_active_role';
+const SESSION_KEY_DELAYS = 'aeromedia_flight_delays'; // {[flightNumber]: delayMinutes}
+
+/** Safely read a value from sessionStorage, returning null on any failure */
+function sessionGet(key: string): string | null {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Safely write a value to sessionStorage, ignoring quota / SSR errors */
+function sessionSet(key: string, value: string): void {
+  try {
+    if (typeof window !== 'undefined') window.sessionStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Fully purge demo session & local storage state, invalidating caches
+ * and restoring clean default seed offsets.
+ */
+function clearDemoStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const knownKeys = [
+      SESSION_KEY_SIM_OFFSET,
+      SESSION_KEY_REDEMPTIONS,
+      SESSION_KEY_ROLE,
+      SESSION_KEY_DELAYS,
+      'aeromedia_state',
+      'aeromedia_session',
+      'aeromedia_redemptions',
+      'aeromedia_sim_offset_ms',
+    ];
+    for (const key of knownKeys) {
+      window.sessionStorage.removeItem(key);
+      window.localStorage.removeItem(key);
+    }
+    for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+      const k = window.sessionStorage.key(i);
+      if (k && k.startsWith('aeromedia')) {
+        window.sessionStorage.removeItem(k);
+      }
+    }
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith('aeromedia')) {
+        window.localStorage.removeItem(k);
+      }
+    }
+    window.sessionStorage.setItem(SESSION_KEY_SIM_OFFSET, '0');
+    window.sessionStorage.setItem(SESSION_KEY_REDEMPTIONS, '[]');
+  } catch {
+    // ignore storage exceptions
+  }
+}
+
+/** Hydrate the initial simTime from sessionStorage, falling back to INITIAL_DATE */
+function hydrateSimTime(): Date {
+  const raw = sessionGet(SESSION_KEY_SIM_OFFSET);
+  if (raw !== null) {
+    const offsetMs = Number(raw);
+    if (Number.isFinite(offsetMs) && offsetMs >= 0) {
+      return new Date(INITIAL_DATE.getTime() + offsetMs);
+    }
+  }
+  return new Date(INITIAL_DATE);
+}
+
+/** Hydrate redemptions array from sessionStorage (empty array baseline) */
+function hydrateRedemptions(): Redemption[] {
+  const raw = sessionGet(SESSION_KEY_REDEMPTIONS);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as Redemption[];
+    } catch {
+      // ignore
+    }
+  }
+  return [];
+}
+
+/** Hydrate the persisted role, falling back to default */
+function hydrateRole(): UserRole {
+  const raw = sessionGet(SESSION_KEY_ROLE);
+  const valid: UserRole[] = ['PLATFORM_ADMIN', 'RETAILER', 'MEDIA_MANAGER', 'AIRLINE_REP', 'PASSENGER_SCREEN', 'SPLIT_SCREEN_DEMO'];
+  if (raw && valid.includes(raw as UserRole)) return raw as UserRole;
+  return 'SPLIT_SCREEN_DEMO';
+}
 
 export function SimulationProvider({ children }: { children: React.ReactNode }) {
-  const [simTime, setSimTime] = useState<Date>(new Date(INITIAL_DATE));
+  const [simTime, setSimTime] = useState<Date>(() => hydrateSimTime());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [speed, setSpeed] = useState<SimSpeed>(1);
 
-  // Role navigation state
-  const [currentRole, setCurrentRole] = useState<UserRole>('SPLIT_SCREEN_DEMO');
+  // Role navigation state - hydrated from sessionStorage
+  const [currentRole, setCurrentRoleState] = useState<UserRole>(() => hydrateRole());
   const [selectedRetailerOutlet, setSelectedRetailerOutlet] = useState<string>('Metropolis Duty Free');
   const [selectedAirline, setSelectedAirline] = useState<string>('Emirates/FlyMetropolis');
 
@@ -139,27 +238,46 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   const [delayGoodwillRule, setDelayGoodwillRule] = useState<DelayGoodwillRule>(INITIAL_GOODWILL_RULE);
   const [coMarketingOffers, setCoMarketingOffers] = useState<CoMarketingPartnerOffer[]>(INITIAL_CO_MARKETING_OFFERS);
 
-  const [redemptions, setRedemptions] = useState<Redemption[]>([
-    {
-      id: 'RED-INIT-01',
-      promoCode: 'GATE42DELAY',
-      campaignId: 'CAMP-COSTA-DELAY',
-      campaignTitle: 'Flight Delayed? Enjoy Artisan Brew & Fresh Pastry',
-      advertiserName: 'Costa Coffee & Express Bites',
-      screenId: 'SCR-G42-01',
-      timestamp: '2026-10-23T14:02:15Z',
-      simTime: '2026-10-23T14:02:15Z',
-      discountValue: '20% OFF',
-      attributedRevenue: 14.80,
-      status: 'REDEEMED',
-    }
-  ]);
+  const [redemptions, setRedemptions] = useState<Redemption[]>(() => hydrateRedemptions());
 
   const [selectedScreenId, setSelectedScreenId] = useState<string>('SCR-G42-01');
   const [decisionLogs, setDecisionLogs] = useState<Record<string, DecisionLog>>({});
   const [eventLogs, setEventLogs] = useState<FlightEvent[]>([]);
   const [aidxLogs, setAidxLogs] = useState<AidxMessage[]>([]);
   const [isRushHour, setIsRushHour] = useState<boolean>(false);
+  const [resetFeedback, setResetFeedback] = useState<string | null>(null);
+  const resetFeedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track simTime start for offset-based persistence
+  const simStartRef = useRef<Date>(new Date(INITIAL_DATE));
+
+  // Wrapped role setter that also persists to sessionStorage and sanitizes screen selection
+  const setCurrentRole = useCallback((role: UserRole) => {
+    setCurrentRoleState(role);
+    sessionSet(SESSION_KEY_ROLE, role);
+
+    if (role === 'PASSENGER_SCREEN') {
+      setSelectedScreenId(prevId => {
+        const isValid = screens && screens.length > 0 && screens.some(s => s && s.id === prevId);
+        return isValid ? prevId : 'SCR-G42-01';
+      });
+    }
+  }, [screens]);
+
+  // Persist simTime offset whenever it changes
+  useEffect(() => {
+    const offsetMs = simTime.getTime() - simStartRef.current.getTime();
+    sessionSet(SESSION_KEY_SIM_OFFSET, String(Math.max(0, offsetMs)));
+  }, [simTime]);
+
+  // Persist redemptions whenever they change
+  useEffect(() => {
+    try {
+      sessionSet(SESSION_KEY_REDEMPTIONS, JSON.stringify(redemptions));
+    } catch {
+      // ignore serialization errors
+    }
+  }, [redemptions]);
 
   // Synchronous evaluator across all screens given current flights and time
   const evaluateAllScreens = useCallback((currentFlights: Flight[], currentSimTime: Date, currentScreensList: Screen[], currentCampaigns: Campaign[] = campaigns) => {
@@ -214,8 +332,18 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       setAidxLogs(prev => [msg, ...prev.slice(0, 29)]);
     });
 
-    // Seed initial AIDX log with XY501 delay
-    const initialAidx = mockAidx.triggerXY501Delay(45, INITIAL_DATE.toISOString());
+    // Seed initial AIDX log with baseline schedule sync
+    const initialAidx = mockAidx.emitFlightLegNotif({
+      flightNumber: 'XY501',
+      airlineCode: 'XY',
+      airlineName: 'Metropolis Airways',
+      destination: 'DXB',
+      gate: 'Gate 42',
+      terminal: 'Terminal 1',
+      delayMinutes: 0,
+      statusCode: 'SCH',
+      simTimeStr: INITIAL_DATE.toISOString(),
+    });
     setAidxLogs([initialAidx.message]);
 
     return () => {
@@ -373,22 +501,75 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
 
   const resetSimulation = useCallback(() => {
     const freshDate = new Date(INITIAL_DATE);
+    simStartRef.current = freshDate;
+
+    // 1. Invalidate and clear all sessionStorage and localStorage caches
+    clearDemoStorage();
+
+    // 2. Reset simulation clock and playback to baseline 14:00
     setSimTime(freshDate);
     setIsPlaying(false);
+    setSpeed(1);
+
+    // 3. Clear all redemptions and reset concession revenue counters to 0
+    setRedemptions([]);
+
+    // 4. Restore AODB flights & guarantee Flight XY501 is on-time at Gate 42
     mockAodb.init();
-    mockAodb.getFlights().then(f => {
-      setFlights(f);
-      evaluateAllScreens(f, freshDate, MOCK_SCREENS, MOCK_CAMPAIGNS);
+    mockAodb.updateFlight('XY501', {
+      status: 'ON_TIME',
+      delayMinutes: 0,
+      scheduledTime: `${BASE_DATE}T14:35:00Z`,
+      estimatedTime: `${BASE_DATE}T14:35:00Z`,
+      gate: 'Gate 42',
     });
+
+    // 5. Clear all injected AIDX messages, flight event logs, and ACRIS rush-hour mode
+    mockAidx.reset();
+    setEventLogs([]);
+    setAidxLogs([]);
     mockAcris.setRushHour(false);
     setIsRushHour(false);
-    setScreens(MOCK_SCREENS);
+
+    // 6. Restore all hardware screen statuses to ONLINE with baseline brand ads (Rolex for SCR-G42-01)
+    const cleanScreens: Screen[] = MOCK_SCREENS.map(s => ({
+      ...s,
+      status: 'ONLINE',
+      currentAdId: s.id === 'SCR-G42-01' ? 'CAMP-ROLEX-SUB' : s.currentAdId,
+    }));
+    setScreens(cleanScreens);
+    setSelectedScreenId('SCR-G42-01');
+
+    // 7. Reset campaigns to baseline (resets impression delivered counters)
+    setCampaigns(MOCK_CAMPAIGNS);
+
+    // 8. Reset incidents, co-marketing offers, goodwill rules, and approvals
     setIncidents(INITIAL_INCIDENTS);
+    setCoMarketingOffers(INITIAL_CO_MARKETING_OFFERS);
+    setDelayGoodwillRule(INITIAL_GOODWILL_RULE);
+    setCreativeApprovals(INITIAL_CREATIVE_APPROVALS);
+
+    // 9. Clear decision log audit history
+    setDecisionLogs({});
+
+    // 10. Re-fetch clean flights and synchronously re-evaluate all screens
+    mockAodb.getFlights().then(cleanFlights => {
+      setFlights(cleanFlights);
+      evaluateAllScreens(cleanFlights, freshDate, cleanScreens, MOCK_CAMPAIGNS);
+    });
+
+    // 11. Trigger immediate visual toast / indicator confirming baseline restoration
+    setResetFeedback('Demo state restored to 14:00 baseline');
+    if (resetFeedbackTimeoutRef.current) {
+      clearTimeout(resetFeedbackTimeoutRef.current);
+    }
+    resetFeedbackTimeoutRef.current = setTimeout(() => {
+      setResetFeedback(null);
+    }, 4000);
   }, [evaluateAllScreens]);
 
   const resetDemoState = useCallback(() => {
     resetSimulation();
-    setSelectedScreenId('SCR-G42-01');
   }, [resetSimulation]);
 
   const setSimTimeDirect = useCallback((hours: number, minutes: number) => {
@@ -576,6 +757,8 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
     triggerAidxXmlInjection,
     runEngineForScreen,
     addRedemption,
+    resetFeedback,
+    setResetFeedback,
   };
 
   return (
@@ -595,6 +778,8 @@ const defaultFallbackValue: SimulationContextValue = {
   resetSimulation: () => {},
   resetDemoState: () => {},
   setSimTimeDirect: () => {},
+  resetFeedback: null,
+  setResetFeedback: () => {},
   currentRole: 'SPLIT_SCREEN_DEMO',
   setCurrentRole: () => {},
   selectedRetailerOutlet: 'Metropolis Duty Free',

@@ -11,7 +11,7 @@ export const MOCK_SCREENS: Screen[] = [
     concourse: 'Concourse B',
     orientation: '16:9',
     status: 'ONLINE',
-    currentAdId: 'CAMP-COSTA-DELAY',
+    currentAdId: 'CAMP-ROLEX-SUB',
     resolution: '3840x2160',
     physicalLocation: 'Gate 42 Podium Overhead Digital Display',
   },

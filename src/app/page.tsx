@@ -7,11 +7,12 @@ import { SplitScreenDemoView } from '@/components/views/SplitScreenDemoView';
 import { PassengerScreenView } from '@/components/views/PassengerScreenView';
 import { AdminDashboardView } from '@/components/views/AdminDashboardView';
 import { RetailerPortalView } from '@/components/views/RetailerPortalView';
-import { MediaManagerView } from '@/components/views/MediaManagerView';
+import { MediaManagerViewBoundary } from '@/components/views/MediaManagerView';
 import { AirlineHubView } from '@/components/views/AirlineHubView';
 import { FlightOperationsBoard } from '@/components/FlightOperationsBoard';
 import { AidxInspector } from '@/components/AidxInspector';
 import { AcrisTelemetryPanel } from '@/components/AcrisTelemetryPanel';
+import { ComponentErrorBoundary } from '@/components/common/ComponentErrorBoundary';
 
 function AppContent() {
   const { currentRole } = useAirportSimulation();
@@ -24,37 +25,59 @@ function AppContent() {
       {/* 2. Main Role-Aware Workspace */}
       <main className="flex-1 p-4 lg:p-6 max-w-7xl mx-auto w-full space-y-8">
         {currentRole === 'SPLIT_SCREEN_DEMO' && (
-          <div className="space-y-8">
-            <SplitScreenDemoView />
+          <ComponentErrorBoundary viewName="Split Screen Demo">
+            <div className="space-y-8">
+              <SplitScreenDemoView />
 
-            {/* Supplemental Platform Telemetry Drawer for Judges */}
-            <div className="pt-6 border-t border-slate-800/80 space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                    DECOUPLED DATA FEEDS & ACI ACRIS SENSORS
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono">
-                    Underlying streaming telemetry powering autonomous screen decisions
-                  </p>
+              {/* Supplemental Platform Telemetry Drawer for Judges */}
+              <div className="pt-6 border-t border-slate-800/80 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
+                      DECOUPLED DATA FEEDS & ACI ACRIS SENSORS
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono">
+                      Underlying streaming telemetry powering autonomous screen decisions
+                    </p>
+                  </div>
+                </div>
+
+                <FlightOperationsBoard />
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <AidxInspector />
+                  <AcrisTelemetryPanel />
                 </div>
               </div>
-
-              <FlightOperationsBoard />
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <AidxInspector />
-                <AcrisTelemetryPanel />
-              </div>
             </div>
-          </div>
+          </ComponentErrorBoundary>
         )}
 
-        {currentRole === 'PASSENGER_SCREEN' && <PassengerScreenView />}
-        {currentRole === 'PLATFORM_ADMIN' && <AdminDashboardView />}
-        {currentRole === 'RETAILER' && <RetailerPortalView />}
-        {currentRole === 'MEDIA_MANAGER' && <MediaManagerView />}
-        {currentRole === 'AIRLINE_REP' && <AirlineHubView />}
+        {currentRole === 'PASSENGER_SCREEN' && (
+          <ComponentErrorBoundary viewName="Passenger Screen">
+            <PassengerScreenView />
+          </ComponentErrorBoundary>
+        )}
+        {currentRole === 'PLATFORM_ADMIN' && (
+          <ComponentErrorBoundary viewName="Platform Admin Dashboard">
+            <AdminDashboardView />
+          </ComponentErrorBoundary>
+        )}
+        {currentRole === 'RETAILER' && (
+          <ComponentErrorBoundary viewName="Retailer Portal">
+            <RetailerPortalView />
+          </ComponentErrorBoundary>
+        )}
+        {currentRole === 'MEDIA_MANAGER' && (
+          <ComponentErrorBoundary viewName="Media Manager">
+            <MediaManagerViewBoundary />
+          </ComponentErrorBoundary>
+        )}
+        {currentRole === 'AIRLINE_REP' && (
+          <ComponentErrorBoundary viewName="Airline Hub">
+            <AirlineHubView />
+          </ComponentErrorBoundary>
+        )}
       </main>
 
       {/* Global Footer */}

@@ -46,15 +46,16 @@ export function AirlineHubView() {
 
   // Filter flights for this airline
   const airlineFlights = useMemo(() => {
-    return flights.filter(f => {
-      if (selectedAirline.toLowerCase().includes('skyleisure')) {
+    return (flights || []).filter(f => {
+      if (!f) return false;
+      if (selectedAirline?.toLowerCase().includes('skyleisure')) {
         return f.airlineCode === 'ZQ';
       }
       return f.airlineCode === 'XY' || f.airlineCode === 'EK';
     });
   }, [flights, selectedAirline]);
 
-  const xy501 = flights.find(f => f.flightNumber === 'XY501');
+  const xy501 = (flights || []).find(f => f?.flightNumber === 'XY501');
   const isDelayed = Boolean(xy501?.delayMinutes && xy501.delayMinutes > 0);
 
   const handleBroadcastMessage = (e: React.FormEvent) => {
@@ -98,10 +99,10 @@ export function AirlineHubView() {
             <select
               value={selectedAirline}
               onChange={e => setSelectedAirline(e.target.value)}
-              className="bg-transparent text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
+              className="bg-slate-900 text-slate-100 text-xs font-mono font-bold focus:outline-none cursor-pointer rounded px-1.5 py-0.5"
             >
-              <option value="Emirates/FlyMetropolis">FlyMetropolis (XY / EK)</option>
-              <option value="SkyLeisure">SkyLeisure Airways (ZQ)</option>
+              <option value="Emirates/FlyMetropolis" className="bg-slate-900 text-slate-100 py-1">FlyMetropolis (XY / EK)</option>
+              <option value="SkyLeisure" className="bg-slate-900 text-slate-100 py-1">SkyLeisure Airways (ZQ)</option>
             </select>
           </div>
 
@@ -127,21 +128,21 @@ export function AirlineHubView() {
 
           <div className="flex items-center gap-2">
             <span className={`text-[10px] font-mono font-bold px-2.5 py-1 rounded-full ${
-              delayGoodwillRule.enabled
+              delayGoodwillRule?.enabled
                 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                 : 'bg-slate-800 text-slate-400'
             }`}>
-              {delayGoodwillRule.enabled ? 'AUTOMATION ACTIVE' : 'RULE PAUSED'}
+              {delayGoodwillRule?.enabled ? 'AUTOMATION ACTIVE' : 'RULE PAUSED'}
             </span>
             <button
               onClick={toggleGoodwillRule}
               className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-colors ${
-                delayGoodwillRule.enabled
+                delayGoodwillRule?.enabled
                   ? 'bg-slate-800 hover:bg-slate-700 text-slate-200'
                   : 'bg-indigo-600 hover:bg-indigo-500 text-white'
               }`}
             >
-              {delayGoodwillRule.enabled ? 'Pause Rule' : 'Enable Rule'}
+              {delayGoodwillRule?.enabled ? 'Pause Rule' : 'Enable Rule'}
             </button>
           </div>
         </div>
@@ -152,11 +153,11 @@ export function AirlineHubView() {
             <div className="text-white font-bold flex items-center gap-2">
               <span>Rule Contract:</span>
               <span className="text-indigo-400">
-                When Flight Delay &gt; {delayGoodwillRule.delayThresholdMinutes} mins → Trigger {delayGoodwillRule.voucherDiscount} {delayGoodwillRule.sponsorPartner} Voucher
+                When Flight Delay &gt; {delayGoodwillRule?.delayThresholdMinutes ?? 30} mins → Trigger {delayGoodwillRule?.voucherDiscount ?? '20% OFF'} {delayGoodwillRule?.sponsorPartner ?? 'Costa Coffee'} Voucher
               </span>
             </div>
             <p className="text-slate-400 text-[11px]">
-              Cost Split: <strong>{delayGoodwillRule.costSplit}</strong> • Target: Holdroom screens at affected departure gate • Passenger satisfaction lift: +42 NPS
+              Cost Split: <strong>{delayGoodwillRule?.costSplit ?? '50% Airline / 50% Concession'}</strong> • Target: Holdroom screens at affected departure gate • Passenger satisfaction lift: +42 NPS
             </p>
           </div>
 
@@ -231,9 +232,9 @@ export function AirlineHubView() {
                     <td className="py-3 px-3 text-slate-200">{f.destination} ({f.destinationCity})</td>
                     <td className="py-3 px-3 text-cyan-300 font-bold">{f.gate}</td>
                     <td className="py-3 px-3">
-                      <div>{f.scheduledTime.split('T')[1]?.substring(0, 5)} UTC</div>
+                      <div>{(f.scheduledTime?.includes('T') ? f.scheduledTime.split('T')[1]?.substring(0, 5) : f.scheduledTime) ?? '14:00'} UTC</div>
                       <div className={isFlightDelayed ? 'text-amber-400 font-bold' : 'text-slate-500'}>
-                        {f.estimatedTime.split('T')[1]?.substring(0, 5)} UTC {isFlightDelayed ? `(+${f.delayMinutes}m)` : ''}
+                        {(f.estimatedTime?.includes('T') ? f.estimatedTime.split('T')[1]?.substring(0, 5) : f.estimatedTime) ?? '14:00'} UTC {isFlightDelayed ? `(+${f.delayMinutes}m)` : ''}
                       </div>
                     </td>
                     <td className="py-3 px-3">{f.paxCount} pax</td>
@@ -421,7 +422,7 @@ export function AirlineHubView() {
             <div className="flex items-center gap-2">
               <Percent className="h-5 w-5 text-emerald-400" />
               <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                Partner Co-Marketing Marketplace ({coMarketingOffers.length} Offers)
+                Partner Co-Marketing Marketplace ({(coMarketingOffers || []).length} Offers)
               </h3>
             </div>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
@@ -430,12 +431,12 @@ export function AirlineHubView() {
           </div>
 
           <div className="text-xs font-mono text-slate-400">
-            Authorized Deals: <strong className="text-emerald-400">{coMarketingOffers.filter(o => o.authorized).length}</strong>
+            Authorized Deals: <strong className="text-emerald-400">{(coMarketingOffers || []).filter(o => o.authorized).length}</strong>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {coMarketingOffers.map(offer => (
+          {(coMarketingOffers || []).map(offer => (
             <div 
               key={offer.id}
               className={`bg-slate-950 rounded-2xl border p-4 flex flex-col justify-between gap-3 transition-all ${
